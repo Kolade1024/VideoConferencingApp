@@ -1,6 +1,6 @@
 "use client";
 
-import { MicIcon, MicOffIcon, VideoIcon, VideoOffIcon, SoundWaveIcon, MoreIcon } from "./icons";
+import { MicIcon, MicOffIcon, VideoIcon, VideoOffIcon, SoundWaveIcon, MoreIcon, HandIcon } from "./icons";
 import { useState, useRef, useEffect } from "react";
 
 export function Avatar({ name, src, size = 40 }: { name: string; src?: string; size?: number }) {
@@ -90,12 +90,14 @@ export function ParticipantCard({
   isMuted,
   isVideoOff,
   imageSrc,
+  hasRaisedHand,
 }: {
   name: string;
   isActive?: boolean;
   isMuted?: boolean;
   isVideoOff?: boolean;
   imageSrc?: string;
+  hasRaisedHand?: boolean;
 }) {
   return (
     <div className="relative aspect-video bg-gray-200 rounded-2xl overflow-hidden group">
@@ -114,6 +116,11 @@ export function ParticipantCard({
 
       {/* Status indicators */}
       <div className="absolute bottom-3 right-3 flex gap-2">
+        {hasRaisedHand && (
+          <div className="bg-yellow-400 text-gray-900 p-1.5 rounded-full shadow">
+            <HandIcon className="w-4 h-4" />
+          </div>
+        )}
         {isMuted ? (
           <div className="bg-red-500/90 text-white p-1.5 rounded-full">
             <MicOffIcon className="w-4 h-4" />
@@ -139,6 +146,7 @@ export function ParticipantListItem({
   isMuted,
   isVideoOff,
   isYou,
+  hasRaisedHand,
   onMenuClick,
 }: {
   name: string;
@@ -146,6 +154,7 @@ export function ParticipantListItem({
   isMuted?: boolean;
   isVideoOff?: boolean;
   isYou?: boolean;
+  hasRaisedHand?: boolean;
   onMenuClick?: (e: React.MouseEvent) => void;
 }) {
   return (
@@ -158,6 +167,11 @@ export function ParticipantListItem({
         )}
       </div>
       <div className="flex items-center gap-2">
+        {hasRaisedHand && (
+          <div className="text-yellow-500">
+            <HandIcon className="w-4 h-4" />
+          </div>
+        )}
         {isMuted ? (
           <MicOffIcon className="w-4 h-4 text-red-500" />
         ) : (
