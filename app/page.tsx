@@ -1608,7 +1608,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="h-screen flex flex-col bg-white overflow-hidden">
+    <div className="h-[100dvh] flex flex-col bg-white overflow-hidden">
       {/* Header */}
       <header className="shrink-0 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between px-4 lg:px-6 py-3">
