@@ -471,6 +471,19 @@ export default function Home() {
   const [notificationHandRaise, setNotificationHandRaise] = useState(true);
   const [notificationError, setNotificationError] = useState(true);
 
+  // Waiting Room state
+  const [waitingUsers, setWaitingUsers] = useState([
+    {
+      id: 1,
+      name: "Samuel Odejinmi",
+      imageSrc: "https://i.pravatar.cc/150?u=samuel",
+    },
+    { id: 2, name: "Emmy ba", imageSrc: "https://i.pravatar.cc/150?u=emmy" },
+  ]);
+  const [activeMobileView, setActiveMobileView] = useState<"menu" | "content">(
+    "menu"
+  );
+
   // Poll states
   const [showPollDialog, setShowPollDialog] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
@@ -779,6 +792,7 @@ export default function Home() {
   const handleOpenSettings = () => {
     setShowMoreMenu(false);
     setShowSettingsDialog(true);
+    setActiveMobileView("menu");
   };
 
   const handleOpenPolls = () => {
@@ -1620,7 +1634,7 @@ export default function Home() {
             </div>
             {/* Recording timer badge */}
             {isRecording && (
-              <div className="hidden sm:flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full">
+              <div className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full">
                 <div className="flex items-center gap-1.5">
                   <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                   <span className="text-sm font-medium text-gray-900">
@@ -2214,7 +2228,9 @@ export default function Home() {
                           <svg
                             className="w-5 h-5"
                             viewBox="0 0 24 24"
-                            fill="currentColor"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
                           >
                             <path d="M6 6h12v12H6z" />
                           </svg>
@@ -2291,7 +2307,7 @@ export default function Home() {
                                 </span>
                                 {hasVoted && (
                                   <span className="text-white font-semibold">
-                                    {answer.percentage}%
+                                    {answer.percentage}%"
                                   </span>
                                 )}
                               </div>
@@ -2319,7 +2335,9 @@ export default function Home() {
                           <svg
                             className="w-5 h-5"
                             viewBox="0 0 24 24"
-                            fill="currentColor"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
                           >
                             <rect x="6" y="6" width="4" height="4" />
                             <rect x="6" y="12" width="4" height="4" />
@@ -2332,7 +2350,9 @@ export default function Home() {
                           <svg
                             className="w-5 h-5"
                             viewBox="0 0 24 24"
-                            fill="currentColor"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
                           >
                             <polygon points="5 3 19 12 5 21 5 3" />
                           </svg>
@@ -3028,7 +3048,9 @@ export default function Home() {
                           <svg
                             className="w-5 h-5"
                             viewBox="0 0 24 24"
-                            fill="currentColor"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
                           >
                             <circle cx="12" cy="5" r="1.5" />
                             <circle cx="12" cy="12" r="1.5" />
@@ -3334,30 +3356,78 @@ export default function Home() {
 
       {/* Settings Dialog */}
       {showSettingsDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-blue-600 rounded-2xl overflow-hidden max-w-3xl w-full shadow-2xl flex">
-            {/* Left sidebar */}
-            <div className="w-80 bg-blue-700/30 p-6">
-              <h2 className="text-xl font-semibold text-white mb-6">
-                Settings
-              </h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div
+            className="absolute inset-0 bg-black/20 pointer-events-auto"
+            onClick={() => setShowSettingsDialog(false)}
+          />
+          <div className="relative bg-blue-600 w-[90%] max-w-sm sm:max-w-3xl h-[70vh] sm:h-auto sm:max-h-[90vh] shadow-2xl flex flex-col sm:flex-row rounded-2xl overflow-hidden pointer-events-auto transition-all">
+            {/* Left sidebar - Menu */}
+            <div
+              className={`w-full sm:w-80 bg-blue-600 sm:bg-blue-700/30 p-6 ${
+                activeMobileView === "menu" ? "block" : "hidden sm:block"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-1.5 bg-white/10 rounded-lg">
+                    <svg
+                      className="w-6 h-6 text-white"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <line x1="8" y1="6" x2="21" y2="6" />
+                      <line x1="8" y1="12" x2="21" y2="12" />
+                      <line x1="8" y1="18" x2="21" y2="18" />
+                      <line x1="3" y1="6" x2="3.01" y2="6" strokeWidth="3" />
+                      <line x1="3" y1="12" x2="3.01" y2="12" strokeWidth="3" />
+                      <line x1="3" y1="18" x2="3.01" y2="18" strokeWidth="3" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-semibold text-white">Settings</h2>
+                </div>
+                <button
+                  onClick={() => setShowSettingsDialog(false)}
+                  className="sm:hidden text-white hover:text-blue-200 transition-colors"
+                >
+                  <svg
+                    className="w-6 h-6"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
               <div className="space-y-2">
                 <button
-                  onClick={() => setSettingsTab("Device Settings")}
+                  onClick={() => {
+                    setSettingsTab("Device Settings");
+                    setActiveMobileView("content");
+                  }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                     settingsTab === "Device Settings"
-                      ? "bg-blue-700 text-white"
+                      ? "bg-blue-500/50 sm:bg-blue-700 text-white"
                       : "text-blue-100 hover:bg-blue-700/50"
                   }`}
                 >
                   <SettingsIcon className="w-5 h-5" />
                   <span className="font-medium">Device Settings</span>
+                  <ChevronDownIcon className="w-4 h-4 ml-auto -rotate-90 sm:hidden" />
                 </button>
                 <button
-                  onClick={() => setSettingsTab("Notifications")}
+                  onClick={() => {
+                    setSettingsTab("Notifications");
+                    setActiveMobileView("content");
+                  }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                     settingsTab === "Notifications"
-                      ? "bg-blue-700 text-white"
+                      ? "bg-blue-500/50 sm:bg-blue-700 text-white"
                       : "text-blue-100 hover:bg-blue-700/50"
                   }`}
                 >
@@ -3372,16 +3442,78 @@ export default function Home() {
                     <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                   </svg>
                   <span className="font-medium">Notifications</span>
+                  <ChevronDownIcon className="w-4 h-4 ml-auto -rotate-90 sm:hidden" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSettingsTab("Waiting Room");
+                    setActiveMobileView("content");
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+                    settingsTab === "Waiting Room"
+                      ? "bg-blue-500/50 sm:bg-blue-700 text-white"
+                      : "text-blue-100 hover:bg-blue-700/50"
+                  }`}
+                >
+                  <UsersIcon className="w-5 h-5" />
+                  <span className="font-medium">Waiting Room</span>
+                  <ChevronDownIcon className="w-4 h-4 ml-auto -rotate-90 sm:hidden" />
                 </button>
               </div>
             </div>
 
             {/* Right content */}
-            <div className="flex-1 bg-blue-600 p-6 relative">
-              {/* Close button */}
+            <div
+              className={`flex-1 bg-blue-600 p-6 relative overflow-y-auto ${
+                activeMobileView === "content" ? "block" : "hidden sm:block"
+              }`}
+            >
+              {/* Mobile Header for Content View */}
+              <div className="flex items-center justify-between mb-6 sm:hidden">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setActiveMobileView("menu")}
+                    className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition-colors"
+                  >
+                    <svg
+                      className="w-6 h-6 text-white"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <line x1="8" y1="6" x2="21" y2="6" />
+                      <line x1="8" y1="12" x2="21" y2="12" />
+                      <line x1="8" y1="18" x2="21" y2="18" />
+                      <line x1="3" y1="6" x2="3.01" y2="6" strokeWidth="3" />
+                      <line x1="3" y1="12" x2="3.01" y2="12" strokeWidth="3" />
+                      <line x1="3" y1="18" x2="3.01" y2="18" strokeWidth="3" />
+                    </svg>
+                  </button>
+                  <h3 className="text-xl font-semibold text-white">
+                    {settingsTab}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowSettingsDialog(false)}
+                  className="text-white hover:text-blue-200 transition-colors"
+                >
+                  <svg
+                    className="w-6 h-6"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Desktop Close button */}
               <button
                 onClick={() => setShowSettingsDialog(false)}
-                className="absolute top-4 right-4 text-white hover:text-blue-200 transition-colors"
+                className="hidden sm:block absolute top-4 right-4 text-white hover:text-blue-200 transition-colors"
               >
                 <svg
                   className="w-6 h-6"
@@ -3394,9 +3526,9 @@ export default function Home() {
                 </svg>
               </button>
 
-              {settingsTab === "Device Settings" ? (
+              {settingsTab === "Device Settings" && (
                 <div>
-                  <h3 className="text-xl font-semibold text-white mb-6">
+                  <h3 className="hidden sm:block text-xl font-semibold text-white mb-6">
                     Device Settings
                   </h3>
 
@@ -3410,7 +3542,7 @@ export default function Home() {
                         <select
                           value={selectedCamera}
                           onChange={(e) => setSelectedCamera(e.target.value)}
-                          className="w-full bg-blue-700/50 text-white px-4 py-3 pr-10 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 border border-blue-500"
+                          className="w-full bg-blue-700/50 text-white px-4 py-3 pr-10 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
                         >
                           <option value="HD Camera">HD Camera</option>
                           <option value="Built-in Camera">
@@ -3435,7 +3567,7 @@ export default function Home() {
                           onChange={(e) =>
                             setSelectedVideoQuality(e.target.value)
                           }
-                          className="w-full bg-blue-700/50 text-white px-4 py-3 pr-10 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 border border-blue-500"
+                          className="w-full bg-blue-700/50 text-white px-4 py-3 pr-10 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
                         >
                           <option value="High Definition">
                             High Definition
@@ -3460,7 +3592,7 @@ export default function Home() {
                           onChange={(e) =>
                             setSelectedMicrophone(e.target.value)
                           }
-                          className="w-full bg-blue-700/50 text-white px-4 py-3 pr-10 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 border border-blue-500"
+                          className="w-full bg-blue-700/50 text-white px-4 py-3 pr-10 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
                         >
                           <option value="Default - Intel HP Mic (Built-in)">
                             Default - Intel HP Mic (Built-in)
@@ -3486,7 +3618,7 @@ export default function Home() {
                           <select
                             value={selectedSpeaker}
                             onChange={(e) => setSelectedSpeaker(e.target.value)}
-                            className="w-full bg-blue-700/50 text-white px-4 py-3 pr-10 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 border border-blue-500"
+                            className="w-full bg-blue-700/50 text-white px-4 py-3 pr-10 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
                           >
                             <option value="Default - Intel HP Spea...">
                               Default - Intel HP Spea...
@@ -3503,17 +3635,40 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
+
+                    {/* Dark Mode Toggle */}
+                    <div className="flex items-center justify-between pt-4 border-t border-blue-500/30">
+                      <div className="flex items-center gap-3">
+                        <svg
+                          className="w-5 h-5 text-white"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                        </svg>
+                        <span className="text-white font-medium">
+                          Dark Mode
+                        </span>
+                      </div>
+                      <button className="relative w-12 h-6 rounded-full bg-blue-700/50 transition-colors">
+                        <div className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform translate-x-0" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {settingsTab === "Notifications" && (
                 <div>
-                  <h3 className="text-xl font-semibold text-white mb-6">
+                  <h3 className="hidden sm:block text-xl font-semibold text-white mb-6">
                     Notifications
                   </h3>
 
                   <div className="space-y-4">
                     {/* Leave */}
-                    <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center justify-between py-3 border-b border-blue-500/30">
                       <div className="flex items-center gap-3">
                         <svg
                           className="w-5 h-5 text-white"
@@ -3545,7 +3700,7 @@ export default function Home() {
                     </div>
 
                     {/* New Message */}
-                    <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center justify-between py-3 border-b border-blue-500/30">
                       <div className="flex items-center gap-3">
                         <svg
                           className="w-5 h-5 text-white"
@@ -3579,7 +3734,7 @@ export default function Home() {
                     </div>
 
                     {/* Hand Raise */}
-                    <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center justify-between py-3 border-b border-blue-500/30">
                       <div className="flex items-center gap-3">
                         <HandIcon className="w-5 h-5 text-white" />
                         <span className="text-white font-medium">
@@ -3635,6 +3790,70 @@ export default function Home() {
                         />
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === "Waiting Room" && (
+                <div>
+                  <h3 className="hidden sm:block text-xl font-semibold text-white mb-6">
+                    Waiting Room
+                  </h3>
+
+                  <div className="flex gap-3 mb-6">
+                    <button className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors">
+                      <svg
+                        className="w-4 h-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      Allow Everyone
+                    </button>
+                    <button className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors">
+                      <svg
+                        className="w-4 h-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                      Deny Everyone
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {waitingUsers.map((user) => (
+                      <div
+                        key={user.id}
+                        className="flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={user.imageSrc}
+                            alt={user.name}
+                            className="w-10 h-10 rounded-full object-cover border-2 border-white/20"
+                          />
+                          <span className="text-white font-medium">
+                            {user.name}
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button className="px-4 py-1.5 rounded-full border border-blue-300 text-white hover:bg-blue-700 transition-colors text-sm font-medium">
+                            Allow
+                          </button>
+                          <button className="px-4 py-1.5 rounded-full border border-red-500 text-red-500 hover:bg-red-500/10 transition-colors text-sm font-medium">
+                            Deny
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
