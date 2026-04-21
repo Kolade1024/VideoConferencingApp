@@ -1,10 +1,26 @@
 "use client";
 
-import { MicIcon, MicOffIcon, VideoIcon, VideoOffIcon, SoundWaveIcon, MoreIcon, HandIcon } from "./icons";
+import {
+  MicIcon,
+  MicOffIcon,
+  VideoIcon,
+  VideoOffIcon,
+  SoundWaveIcon,
+  MoreIcon,
+  HandIcon,
+} from "./icons";
 import { useState, useRef, useEffect } from "react";
 
-export function Avatar({ name, src, size = 40 }: { name: string; src?: string; size?: number }) {
-  const initials = name
+export function Avatar({
+  name,
+  src,
+  size = 40,
+}: {
+  name: string;
+  src?: string;
+  size?: number;
+}) {
+  const initials = (name || "?")
     .split(" ")
     .map((n) => n[0])
     .join("")
@@ -45,14 +61,20 @@ export function IconButton({
   onClick?: () => void;
   className?: string;
 }) {
-  const baseClasses = "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105";
+  const baseClasses =
+    "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105";
   const variantClasses = {
-    default: active ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
+    default: active
+      ? "bg-blue-600 text-white"
+      : "bg-white text-gray-700 hover:bg-gray-50",
     danger: "bg-red-500 text-white hover:bg-red-600",
   };
 
   return (
-    <button onClick={onClick} className={`${baseClasses} ${variantClasses[variant]} shadow-md ${className}`}>
+    <button
+      onClick={onClick}
+      className={`${baseClasses} ${variantClasses[variant]} shadow-md ${className}`}
+    >
       {children}
     </button>
   );
@@ -73,9 +95,10 @@ export function Tabs({
         <button
           key={tab}
           onClick={() => onChange(tab)}
-          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${
-            activeTab === tab ? "bg-blue-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"
-          }`}
+          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${activeTab === tab
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-gray-600 hover:text-gray-900"
+            }`}
         >
           {tab}
         </button>
@@ -91,6 +114,7 @@ export function ParticipantCard({
   isVideoOff,
   imageSrc,
   hasRaisedHand,
+  audioLevel,
 }: {
   name: string;
   isActive?: boolean;
@@ -98,6 +122,7 @@ export function ParticipantCard({
   isVideoOff?: boolean;
   imageSrc?: string;
   hasRaisedHand?: boolean;
+  audioLevel?: number;
 }) {
   return (
     <div className="relative aspect-video bg-gray-200 rounded-2xl overflow-hidden group">
@@ -125,10 +150,12 @@ export function ParticipantCard({
           <div className="bg-red-500/90 text-white p-1.5 rounded-full">
             <MicOffIcon className="w-4 h-4" />
           </div>
-        ) : isActive && (
-          <div className="bg-white/90 text-gray-700 p-1.5 rounded-full">
-            <SoundWaveIcon className="w-4 h-4" />
-          </div>
+        ) : (
+          isActive && (
+            <div className="bg-white/90 text-gray-700 p-1.5 rounded-full">
+              <SoundWaveIcon className="w-4 h-4" audioLevel={audioLevel} />
+            </div>
+          )
         )}
         {isVideoOff && (
           <div className="bg-black/70 text-white p-1.5 rounded-full">
@@ -161,10 +188,10 @@ export function ParticipantListItem({
     <div className="flex items-center justify-between py-2 group">
       <div className="flex items-center gap-3">
         <Avatar name={name} src={imageSrc} size={36} />
-        <span className="text-sm font-medium text-gray-900">{isYou ? "You" : name}</span>
-        {isYou && (
-          <div className="h-2 w-2 bg-blue-600 rounded-full"></div>
-        )}
+        <span className="text-sm font-medium text-gray-900">
+          {isYou ? "You" : name}
+        </span>
+        {isYou && <div className="h-2 w-2 bg-blue-600 rounded-full"></div>}
       </div>
       <div className="flex items-center gap-2">
         {hasRaisedHand && (
@@ -213,7 +240,9 @@ export function ChatMessage({
       <Avatar name={name} src={imageSrc} size={32} />
       <div className="flex-1">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-medium text-gray-900">{isYou ? "You" : name}</span>
+          <span className="text-xs font-medium text-gray-900">
+            {isYou ? "You" : name}
+          </span>
           <span className="text-xs text-gray-400">{time}</span>
         </div>
         <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-2 text-sm text-gray-800">
@@ -294,7 +323,15 @@ export function ParticipantMenu({
 
 function RefreshIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
       <polyline points="23 4 23 10 17 10"></polyline>
       <polyline points="1 20 1 14 7 14"></polyline>
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
@@ -304,7 +341,15 @@ function RefreshIcon({ className = "w-5 h-5" }: { className?: string }) {
 
 function MessageSquareIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
     </svg>
   );
@@ -312,7 +357,15 @@ function MessageSquareIcon({ className = "w-5 h-5" }: { className?: string }) {
 
 function UserMinusIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
       <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
       <circle cx="8.5" cy="7" r="4"></circle>
       <line x1="23" y1="11" x2="17" y2="11"></line>

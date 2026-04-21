@@ -40,6 +40,10 @@ import {
   ChatMessage,
   ParticipantMenu,
 } from "./components/ui";
+import { useAudioLevel } from "./hooks/useAudioLevel";
+import { Toast, ToastType } from "./components/toast";
+import { useBBBSession } from "./hooks/useBBBSession";
+import { useBBBAudio } from "./hooks/useBBBAudio";
 
 function UndoIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -409,12 +413,46 @@ function ArrowRightIcon({ className = "w-4 h-4" }: { className?: string }) {
 }
 
 export default function Home() {
+  // BBB Session Hook - manages create → join → enter → DDP WebSocket
+  const {
+    isLoading: bbbLoading,
+    isConnected: bbbConnected,
+    error: bbbError,
+    sessionInfo: bbbSession,
+    participants: bbbParticipants,
+    chatMessages: bbbChatMessages,
+    guestUsers: bbbGuestUsers,
+    isRecording: bbbIsRecording,
+    sendDDPMethod,
+  } = useBBBSession();
+
   const [isMicOn, setIsMicOn] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(true);
-  const [isRecording, setIsRecording] = useState(true);
+  const [isVideoOn, setIsVideoOn] = useState(false);
+  const isRecording = bbbIsRecording;
   const [recordingTime, setRecordingTime] = useState(0);
   const [showEndRecordingDialog, setShowEndRecordingDialog] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showStartRecordingDialog, setShowStartRecordingDialog] =
+    useState(false);
+
+  // Toast state
+  const [toast, setToast] = useState<{
+    message: string;
+    type: ToastType;
+    isVisible: boolean;
+  }>({
+    message: "",
+    type: "info",
+    isVisible: false,
+  });
+
+  const showToast = (message: string, type: ToastType = "info") => {
+    setToast({ message, type, isVisible: true });
+  };
+
+  const hideToast = () => {
+    setToast((prev) => ({ ...prev, isVisible: false }));
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth >= 1024) {
@@ -422,7 +460,100 @@ export default function Home() {
     }
   }, []);
 
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const audioLevel = useAudioLevel(stream);
+
+  // Initialize BBB Audio WebRTC connection
+  const { status: bbbAudioStatus } = useBBBAudio(bbbSession?.sessionToken, stream);
+
+  //Request Microphone
+  const requestMicrophone = async () => {
+    if (isMicOn) {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        setStream(null);
+      }
+      setIsMicOn(false);
+      return;
+    }
+
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      setStream(micStream);
+      setIsMicOn(!isMicOn);
+      console.log("Microphone stream:", micStream);
+    } catch (err: any) {
+      setError(err.message || "Microphone access denied");
+    }
+  };
+
+  //Request Camera
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const selfVideoRef = useRef<HTMLVideoElement>(null);
+  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  // Screen share states
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  // const [showScreenShareDialog, setShowScreenShareDialog] = useState(false);
+  // const [selectedScreenTab, setSelectedScreenTab] = useState("Entire screen");
+  // const [selectedScreen, setSelectedScreen] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (videoRef.current && videoStream) {
+      videoRef.current.srcObject = videoStream;
+    }
+    if (selfVideoRef.current && videoStream) {
+      selfVideoRef.current.srcObject = videoStream;
+    }
+  }, [videoStream, isVideoOn, isScreenSharing]);
+
+  const requestCamera = async () => {
+    if (isVideoOn) {
+      setIsVideoOn(false);
+      if (videoStream) {
+        videoStream.getTracks().forEach((track) => track.stop());
+        setVideoStream(null);
+      }
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+      });
+
+      setVideoStream(stream);
+      setIsVideoOn(true);
+    } catch (err: any) {
+      setError(err.message || "Camera access denied");
+    }
+  };
+
   const [chatTab, setChatTab] = useState("Group");
+  const [chatInput, setChatInput] = useState("");
+
+  // Send a chat message via BBB DDP
+  const handleSendMessage = () => {
+    const text = chatInput.trim();
+    if (!text) return;
+    const correlationId = `${bbbSession?.internalUserID || "unknown"}-${Date.now()}`;
+    sendDDPMethod("sendGroupChatMsg", [
+      "MAIN-PUBLIC-GROUP-CHAT",
+      {
+        chatEmphasizedText: true,
+        message: text,
+        sender: {
+          id: bbbSession?.internalUserID || "",
+          name: bbbSession?.internalUserID || "",
+          role: "",
+        },
+        correlationId,
+      },
+    ]);
+    setChatInput("");
+  };
 
   // Participant menu states
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
@@ -437,12 +568,6 @@ export default function Home() {
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
   const [showLeaveRoomDialog, setShowLeaveRoomDialog] = useState(false);
   const [hasLeftSession, setHasLeftSession] = useState(false);
-
-  // Screen share states
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [showScreenShareDialog, setShowScreenShareDialog] = useState(false);
-  const [selectedScreenTab, setSelectedScreenTab] = useState("Entire screen");
-  const [selectedScreen, setSelectedScreen] = useState<number | null>(null);
 
   // More menu state
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -471,15 +596,15 @@ export default function Home() {
   const [notificationHandRaise, setNotificationHandRaise] = useState(true);
   const [notificationError, setNotificationError] = useState(true);
 
-  // Waiting Room state
-  const [waitingUsers, setWaitingUsers] = useState([
-    {
-      id: 1,
-      name: "Samuel Odejinmi",
-      imageSrc: "https://i.pravatar.cc/150?u=samuel",
-    },
-    { id: 2, name: "Emmy ba", imageSrc: "https://i.pravatar.cc/150?u=emmy" },
-  ]);
+  // Waiting Room - mapped from BBB guest users with "WAIT" status
+  const waitingUsers = bbbGuestUsers
+    .filter((g) => g.guestStatus === "WAIT")
+    .map((g, index) => ({
+      id: g.odId,
+      odUserId: g.odUserId,
+      name: g.name,
+      imageSrc: g.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(g.name)}&background=${g.color.replace('#', '')}&color=fff&size=150`,
+    }));
   const [activeMobileView, setActiveMobileView] = useState<"menu" | "content">(
     "menu"
   );
@@ -637,13 +762,24 @@ export default function Home() {
     if (isRecording) {
       setShowEndRecordingDialog(true);
     } else {
-      setIsRecording(true);
+      setShowStartRecordingDialog(true);
     }
   };
 
+  const handleStartRecording = () => {
+    sendDDPMethod("toggleRecording", []);
+    setShowStartRecordingDialog(false);
+    showToast("Recording started", "success");
+  };
+
+  const handleCancelStartRecording = () => {
+    setShowStartRecordingDialog(false);
+  };
+
   const handleEndRecording = () => {
-    setIsRecording(false);
+    sendDDPMethod("toggleRecording", []);
     setShowEndRecordingDialog(false);
+    showToast("Recording stopped", "info");
   };
 
   const handleCancelEndRecording = () => {
@@ -726,24 +862,24 @@ export default function Home() {
     setHasLeftSession(true);
   };
 
-  const handleScreenShareClick = () => {
-    if (isScreenSharing) {
-      setIsScreenSharing(false);
-    } else {
-      setShowScreenShareDialog(true);
-    }
-  };
+  // const handleScreenShareClick = () => {
+  //   if (isScreenSharing) {
+  //     setIsScreenSharing(false);
+  //   } else {
+  //     setShowScreenShareDialog(true);
+  //   }
+  // };
 
-  const handleStartScreenShare = () => {
-    if (selectedScreen !== null) {
-      setIsScreenSharing(true);
-      setShowScreenShareDialog(false);
-    }
-  };
+  // const handleStartScreenShare = () => {
+  //   if (selectedScreen !== null) {
+  //     setIsScreenSharing(true);
+  //     setShowScreenShareDialog(false);
+  //   }
+  // };
 
-  const handleStopScreenShare = () => {
-    setIsScreenSharing(false);
-  };
+  // const handleStopScreenShare = () => {
+  //   setIsScreenSharing(false);
+  // };
 
   const handleShareExternalVideo = () => {
     setShowMoreMenu(false);
@@ -959,14 +1095,12 @@ export default function Home() {
   };
 
   const handleHandRaise = () => {
-    // Toggle hand raise for current user (id: 1)
-    setRaisedHands((prev) => {
-      if (prev.includes(1)) {
-        return prev.filter((id) => id !== 1);
-      } else {
-        return [...prev, 1];
-      }
-    });
+    const userId = bbbSession?.internalUserID;
+    if (!userId) return;
+    // Check current user's emoji from BBB participants
+    const currentUser = bbbParticipants.find(p => p.odUserId === userId);
+    const isRaised = currentUser?.emoji === "raiseHand";
+    sendDDPMethod("setEmojiStatus", [userId, isRaised ? "none" : "raiseHand"]);
   };
 
   const handleOpenWhiteboard = () => {
@@ -1504,82 +1638,90 @@ export default function Home() {
     );
   }
 
-  // Mock data
-  const participants = [
-    {
+  // Map BBB participants to the UI shape
+  const participants = bbbParticipants.map((p, index) => {
+    const isYou = bbbSession ? p.odUserId === bbbSession.internalUserID : index === 0;
+    return {
+      id: index + 1,
+      odId: p.odId,
+      name: isYou ? "You" : p.name,
+      isYou,
+      isMuted: isYou ? !isMicOn : true,
+      isVideoOff: isYou ? !isVideoOn : true,
+      hasRaisedHand: p.raiseHand || raisedHands.includes(index + 1),
+      imageSrc: p.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=${p.color.replace('#', '')}&color=fff&size=400`,
+      role: p.role,
+      presenter: p.presenter,
+      away: p.away,
+    };
+  });
+
+  // If no BBB participants yet, show a minimal fallback
+  if (participants.length === 0) {
+    participants.push({
       id: 1,
+      odId: "self",
       name: "You",
       isYou: true,
       isMuted: !isMicOn,
       isVideoOff: !isVideoOn,
       hasRaisedHand: raisedHands.includes(1),
-      imageSrc:
-        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop",
-    },
-    {
-      id: 2,
-      name: "Bolade ola",
-      isMuted: true,
-      isVideoOff: true,
-      hasRaisedHand: raisedHands.includes(2),
-      imageSrc:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop",
-    },
-    {
-      id: 3,
-      name: "Ajibade fola",
-      isMuted: true,
-      isVideoOff: false,
-      hasRaisedHand: raisedHands.includes(3),
-      imageSrc:
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop",
-    },
-    {
-      id: 4,
-      name: "Kathryn Murphy",
-      isMuted: true,
-      isVideoOff: false,
-      hasRaisedHand: raisedHands.includes(4),
-      imageSrc:
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop",
-    },
-  ];
+      imageSrc: "https://ui-avatars.com/api/?name=You&background=2563eb&color=fff&size=400",
+      role: "MODERATOR",
+      presenter: false,
+      away: false,
+    });
+  }
 
-  const messages = [
-    {
-      id: 1,
-      name: "Kathryn Murphy",
-      message: "Good afternoon, everyone.",
-      time: "11:01 AM",
-      imageSrc:
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop",
-    },
-    {
-      id: 2,
-      name: "Ajibade fola",
-      message: "We will start this meeting",
-      time: "11:02 AM",
-      imageSrc:
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop",
-    },
-    {
-      id: 3,
-      name: "Ajibade fola",
-      message: "Yes, Let's start this meeting",
-      time: "11:02 AM",
-      imageSrc:
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop",
-    },
-    {
-      id: 4,
-      name: "You",
-      message: "Today, we are here to discuss last week's sales.",
-      time: "12:04 AM",
-      isYou: true,
-      imageSrc:
-        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop",
-    },
-  ];
+  // Map BBB chat messages to the UI shape
+  const messages = bbbChatMessages
+    .filter((msg) => msg.message) // Only filter out messages with no content
+    .map((msg, index) => {
+      let senderName = "Unknown";
+      let senderId = "";
+
+      if (typeof msg.sender === "object" && msg.sender !== null) {
+        senderName = msg.sender.name || "Unknown";
+        senderId = msg.sender.id || "";
+      } else if (typeof msg.sender === "string") {
+        senderId = msg.sender;
+        // Use senderName from BBB response if available
+        if (msg.senderName) {
+          senderName = msg.senderName;
+        } else {
+          // Fallback: find the participant name from the ID
+          const participant = bbbParticipants.find(p => p.odUserId === senderId || p.odId === senderId);
+          if (participant) {
+            senderName = participant.name;
+          }
+        }
+      }
+
+      const isYou = bbbSession ? (senderId === bbbSession.internalUserID || senderId === bbbSession.externUserID) : false;
+      const time = new Date(msg.timestamp).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      return {
+        id: msg.id || index + 1,
+        name: isYou ? "You" : senderName,
+        message: msg.message,
+        time,
+        isYou,
+        imageSrc: `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=64748b&color=fff&size=400`,
+      };
+    });
+
+  // BBB connection status logging
+  useEffect(() => {
+    if (bbbConnected) {
+      console.log("[BBB] WebSocket connected and authenticated");
+    }
+    if (bbbError) {
+      console.error("[BBB] Session error:", bbbError);
+    }
+  }, [bbbConnected, bbbError]);
 
   const activeParticipant = participants[0];
   const activeWhiteboardFrame =
@@ -1594,18 +1736,56 @@ export default function Home() {
     label: string;
     icon: JSX.Element;
   }> = [
-    { id: "pointer", label: "Select", icon: <PointerIcon /> },
-    {
-      id: "text",
-      label: "Text",
-      icon: <span className="font-semibold text-xs">T</span>,
-    },
-    { id: "pen", label: "Pen", icon: <PenToolIcon /> },
-    { id: "shapes", label: "Shapes", icon: <ShapeToolIcon /> },
-    { id: "sticky", label: "Sticky Note", icon: <StickyNoteIcon /> },
-    { id: "image", label: "Image", icon: <ImageToolIcon /> },
-    { id: "eraser", label: "Eraser", icon: <EraserIcon /> },
-  ];
+      { id: "pointer", label: "Select", icon: <PointerIcon /> },
+      {
+        id: "text",
+        label: "Text",
+        icon: <span className="font-semibold text-xs">T</span>,
+      },
+      { id: "pen", label: "Pen", icon: <PenToolIcon /> },
+      { id: "shapes", label: "Shapes", icon: <ShapeToolIcon /> },
+      { id: "sticky", label: "Sticky Note", icon: <StickyNoteIcon /> },
+      { id: "image", label: "Image", icon: <ImageToolIcon /> },
+      { id: "eraser", label: "Eraser", icon: <EraserIcon /> },
+    ];
+
+  const screenShareRef = useRef<HTMLVideoElement>(null);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+
+  // Attach screen stream to video element
+  useEffect(() => {
+    if (screenShareRef.current && screenStream) {
+      screenShareRef.current.srcObject = screenStream;
+    }
+  }, [screenStream, isScreenSharing]);
+
+  //Start And Stop Screen Share
+  const startScreenShare = async () => {
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+
+      setScreenStream(displayStream);
+      setIsScreenSharing(true);
+
+      // Stop when user clicks "Stop sharing" in browser UI
+      displayStream.getVideoTracks()[0].onended = () => {
+        handleStopScreenShare();
+      };
+    } catch (err) {
+      console.error("Screen share denied", err);
+    }
+  };
+
+  const handleStopScreenShare = () => {
+    if (screenStream) {
+      screenStream.getTracks().forEach((track) => track.stop());
+      setScreenStream(null);
+    }
+    setIsScreenSharing(false);
+  };
 
   return (
     <div className="h-[100dvh] flex flex-col bg-white overflow-hidden">
@@ -1626,10 +1806,10 @@ export default function Home() {
 
             <div className="hidden sm:block">
               <h1 className="text-sm font-semibold text-gray-900">
-                [Internal] Weekly Report Marketing + Sales
+                {bbbSession?.confname || "Meeting Room"}
               </h1>
               <p className="text-xs text-gray-500">
-                June 12th, 2023 | 11:00 AM
+                {bbbSession ? `${bbbSession.role} • ${bbbConnected ? "Connected" : "Connecting..."}` : bbbLoading ? "Connecting..." : "Not connected"}
               </p>
             </div>
             {/* Recording timer badge */}
@@ -1679,9 +1859,11 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full font-medium">
-                +9
-              </span>
+              {participants.length > 4 && (
+                <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full font-medium">
+                  +{participants.length - 4}
+                </span>
+              )}
             </div>
 
             {/* Meeting link */}
@@ -1690,18 +1872,20 @@ export default function Home() {
               <span>cem-jmnt-hsu</span>
             </button>
 
-            {/* Moderator info */}
-            <div className="hidden lg:flex items-center gap-2 pl-3 border-l border-gray-200">
-              <Avatar
-                name="Adam Joseph"
-                src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop"
-                size={36}
-              />
-              <div>
-                <p className="text-sm font-medium text-gray-900">Adam Joseph</p>
-                <p className="text-xs text-gray-500">Moderator</p>
+            {/* Current user info */}
+            {bbbSession && (
+              <div className="hidden lg:flex items-center gap-2 pl-3 border-l border-gray-200">
+                <Avatar
+                  name={bbbSession.fullname}
+                  src={bbbSession.avatarURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(bbbSession.fullname)}&background=2563eb&color=fff&size=400`}
+                  size={36}
+                />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{bbbSession.fullname}</p>
+                  <p className="text-xs text-gray-500">{bbbSession.role === "MODERATOR" ? "Moderator" : "Viewer"}</p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Mobile menu button - Hidden now as we have specific buttons */}
             <button
@@ -1764,11 +1948,10 @@ export default function Home() {
                           key={color}
                           type="button"
                           onClick={() => setWhiteboardPenColor(color)}
-                          className={`w-6 h-6 rounded-full border-2 transition-transform duration-150 ${
-                            whiteboardPenColor === color
-                              ? "border-blue-600 scale-110"
-                              : "border-white"
-                          }`}
+                          className={`w-6 h-6 rounded-full border-2 transition-transform duration-150 ${whiteboardPenColor === color
+                            ? "border-blue-600 scale-110"
+                            : "border-white"
+                            }`}
                           style={{ backgroundColor: color }}
                           title="Choose color"
                         />
@@ -1813,11 +1996,10 @@ export default function Home() {
                         type="button"
                         onClick={() => handleWhiteboardFrameNavigate(-1)}
                         disabled={whiteboardActiveFrame === 0}
-                        className={`p-1 rounded-md transition-colors ${
-                          whiteboardActiveFrame === 0
-                            ? "text-blue-200"
-                            : "text-blue-600 hover:bg-blue-50"
-                        }`}
+                        className={`p-1 rounded-md transition-colors ${whiteboardActiveFrame === 0
+                          ? "text-blue-200"
+                          : "text-blue-600 hover:bg-blue-50"
+                          }`}
                       >
                         <ArrowLeftIcon className="w-4 h-4" />
                       </button>
@@ -1830,11 +2012,10 @@ export default function Home() {
                         disabled={
                           whiteboardActiveFrame === totalWhiteboardFrames - 1
                         }
-                        className={`p-1 rounded-md transition-colors ${
-                          whiteboardActiveFrame === totalWhiteboardFrames - 1
-                            ? "text-blue-200"
-                            : "text-blue-600 hover:bg-blue-50"
-                        }`}
+                        className={`p-1 rounded-md transition-colors ${whiteboardActiveFrame === totalWhiteboardFrames - 1
+                          ? "text-blue-200"
+                          : "text-blue-600 hover:bg-blue-50"
+                          }`}
                       >
                         <ArrowRightIcon className="w-4 h-4" />
                       </button>
@@ -1855,11 +2036,10 @@ export default function Home() {
                         key={tool.id}
                         type="button"
                         onClick={() => setWhiteboardActiveTool(tool.id)}
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
-                          whiteboardActiveTool === tool.id
-                            ? "bg-white text-blue-600 shadow"
-                            : "text-white/80 hover:bg-blue-500/80"
-                        }`}
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${whiteboardActiveTool === tool.id
+                          ? "bg-white text-blue-600 shadow"
+                          : "text-white/80 hover:bg-blue-500/80"
+                          }`}
                         title={tool.label}
                       >
                         {tool.icon}
@@ -1989,11 +2169,10 @@ export default function Home() {
                               return (
                                 <div
                                   key={element.id}
-                                  className={`absolute rounded-xl overflow-hidden shadow ${
-                                    isSelected
-                                      ? "ring-2 ring-blue-500"
-                                      : "ring-0"
-                                  }`}
+                                  className={`absolute rounded-xl overflow-hidden shadow ${isSelected
+                                    ? "ring-2 ring-blue-500"
+                                    : "ring-0"
+                                    }`}
                                   style={{
                                     left: element.x,
                                     top: element.y,
@@ -2041,11 +2220,10 @@ export default function Home() {
                                         ? "not-allowed"
                                         : "move",
                                   }}
-                                  className={`absolute rounded-2xl p-4 shadow-lg flex flex-col gap-2 transition-shadow ${
-                                    isSelected
-                                      ? "ring-2 ring-offset-2 ring-blue-500"
-                                      : "ring-0"
-                                  }`}
+                                  className={`absolute rounded-2xl p-4 shadow-lg flex flex-col gap-2 transition-shadow ${isSelected
+                                    ? "ring-2 ring-offset-2 ring-blue-500"
+                                    : "ring-0"
+                                    }`}
                                   data-element-id={element.id}
                                   onPointerDown={(event) =>
                                     handleWhiteboardElementPointerDown(
@@ -2117,11 +2295,10 @@ export default function Home() {
                                         ? "not-allowed"
                                         : "move",
                                   }}
-                                  className={`absolute rounded-xl bg-white/90 border border-blue-200 p-3 shadow ${
-                                    isSelected
-                                      ? "ring-2 ring-offset-2 ring-blue-500"
-                                      : "ring-0"
-                                  }`}
+                                  className={`absolute rounded-xl bg-white/90 border border-blue-200 p-3 shadow ${isSelected
+                                    ? "ring-2 ring-offset-2 ring-blue-500"
+                                    : "ring-0"
+                                    }`}
                                   data-element-id={element.id}
                                   onPointerDown={(event) =>
                                     handleWhiteboardElementPointerDown(
@@ -2214,28 +2391,39 @@ export default function Home() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4 max-w-7xl mx-auto">
                 {/* Main speaker - takes 2 columns on desktop */}
                 <div className="lg:col-span-2">
-                  {isScreenSharing ? (
-                    <div className="relative aspect-video rounded-2xl overflow-hidden bg-blue-600">
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
-                        <ShareScreenIcon className="w-16 h-16 mb-4" />
-                        <p className="text-xl font-semibold mb-2">
-                          You are sharing your screen
-                        </p>
-                        <button
-                          onClick={handleStopScreenShare}
-                          className="mt-4 bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                          >
-                            <path d="M6 6h12v12H6z" />
-                          </svg>
-                          Stop Screenshare
-                        </button>
+                  {isScreenSharing && screenStream ? (
+                    <div className="relative aspect-video bg-gray-900 rounded-2xl overflow-hidden group">
+                      <video
+                        ref={screenShareRef}
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-contain"
+                      />
+                      {/* Name tag */}
+                      <div className="absolute bottom-3 left-3 bg-black/70 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2">
+                        <ShareScreenIcon className="w-4 h-4" />
+                        {activeParticipant.name} (Screen)
+                      </div>
+                      {/* Stop sharing button */}
+                      <button
+                        onClick={handleStopScreenShare}
+                        className="absolute top-3 right-3 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg opacity-0 group-hover:opacity-100"
+                      >
+                        <StopCircleIcon className="w-4 h-4" />
+                        Stop Sharing
+                      </button>
+                    </div>
+                  ) : isVideoOn ? (
+                    <div className="relative aspect-video bg-gray-200 rounded-2xl overflow-hidden group">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover transform -scale-x-100"
+                      />
+                      <div className="absolute bottom-3 left-3 bg-black/70 text-white px-3 py-1 rounded-full text-sm font-medium">
+                        {activeParticipant.name}
                       </div>
                     </div>
                   ) : (
@@ -2246,22 +2434,53 @@ export default function Home() {
                       isVideoOff={activeParticipant.isVideoOff}
                       imageSrc={activeParticipant.imageSrc}
                       hasRaisedHand={activeParticipant.hasRaisedHand}
+                      audioLevel={
+                        activeParticipant.isYou ? audioLevel : undefined
+                      }
                     />
                   )}
                 </div>
 
                 {/* Other participants */}
                 <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 lg:gap-4">
-                  {participants.slice(1).map((p) => (
+                  {/* Show self video in small tile when screen sharing */}
+                  {isScreenSharing && isVideoOn && (
+                    <div className="relative aspect-video bg-gray-200 rounded-2xl overflow-hidden">
+                      <video
+                        ref={selfVideoRef}
+                        autoPlay
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover transform -scale-x-100"
+                      />
+                      <div className="absolute bottom-3 left-3 bg-black/70 text-white px-3 py-1 rounded-full text-sm font-medium">
+                        You
+                      </div>
+                    </div>
+                  )}
+                  {isScreenSharing && !isVideoOn && (
                     <ParticipantCard
-                      key={p.id}
-                      name={p.name}
-                      isMuted={p.isMuted}
-                      isVideoOff={p.isVideoOff}
-                      imageSrc={p.imageSrc}
-                      hasRaisedHand={p.hasRaisedHand}
+                      name="You"
+                      isActive={false}
+                      isMuted={!isMicOn}
+                      isVideoOff={true}
+                      imageSrc={activeParticipant.imageSrc}
+                      hasRaisedHand={raisedHands.includes(1)}
+                      audioLevel={audioLevel}
                     />
-                  ))}
+                  )}
+                  {participants
+                    .filter((p) => (isScreenSharing ? !p.isYou : p.id !== 1))
+                    .map((p) => (
+                      <ParticipantCard
+                        key={p.id}
+                        name={p.name}
+                        isMuted={p.isMuted}
+                        isVideoOff={p.isVideoOff}
+                        imageSrc={p.imageSrc}
+                        hasRaisedHand={p.hasRaisedHand}
+                      />
+                    ))}
                 </div>
 
                 {/* Poll Overlay */}
@@ -2288,11 +2507,10 @@ export default function Home() {
                             key={index}
                             onClick={() => handleVotePoll(index)}
                             disabled={hasVoted}
-                            className={`w-full text-left transition-colors ${
-                              hasVoted
-                                ? "cursor-default"
-                                : "hover:bg-blue-700 cursor-pointer"
-                            }`}
+                            className={`w-full text-left transition-colors ${hasVoted
+                              ? "cursor-default"
+                              : "hover:bg-blue-700 cursor-pointer"
+                              }`}
                           >
                             <div className="bg-blue-500/40 rounded-lg p-3 relative overflow-hidden">
                               {hasVoted && (
@@ -2377,7 +2595,7 @@ export default function Home() {
             <div className="flex items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 flex-wrap">
               <IconButton
                 active={!isMicOn}
-                onClick={() => setIsMicOn(!isMicOn)}
+                onClick={requestMicrophone}
                 className="w-10 h-10 lg:w-12 lg:h-12"
               >
                 {isMicOn ? <MicIcon /> : <MicOffIcon />}
@@ -2385,7 +2603,7 @@ export default function Home() {
 
               <IconButton
                 active={isVideoOn}
-                onClick={() => setIsVideoOn(!isVideoOn)}
+                onClick={requestCamera}
                 className="w-10 h-10 lg:w-12 lg:h-12"
               >
                 {isVideoOn ? <VideoIcon /> : <VideoOffIcon />}
@@ -2393,7 +2611,9 @@ export default function Home() {
 
               <IconButton
                 active={isScreenSharing}
-                onClick={handleScreenShareClick}
+                onClick={
+                  isScreenSharing ? handleStopScreenShare : startScreenShare
+                }
                 className="w-10 h-10 lg:w-12 lg:h-12"
               >
                 <ShareScreenIcon />
@@ -2405,9 +2625,8 @@ export default function Home() {
                 className="hidden lg:flex w-12 h-12"
               >
                 <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                    isRecording ? "bg-red-500" : "bg-gray-300"
-                  }`}
+                  className={`w-6 h-6 rounded-full flex items-center justify-center ${isRecording ? "bg-red-500" : "bg-gray-300"
+                    }`}
                 >
                   <RecordIcon className="w-3 h-3 text-white" />
                 </div>
@@ -2477,11 +2696,10 @@ export default function Home() {
               <div ref={moreButtonRef} className="relative">
                 <button
                   onClick={() => setShowMoreMenu(!showMoreMenu)}
-                  className={`w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center transition-all duration-200 ${
-                    showMoreMenu
-                      ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-100"
-                      : "bg-blue-100 text-blue-600 hover:bg-blue-200"
-                  }`}
+                  className={`w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center transition-all duration-200 ${showMoreMenu
+                    ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-100"
+                    : "bg-blue-100 text-blue-600 hover:bg-blue-200"
+                    }`}
                 >
                   <MoreIcon className="w-6 h-6" />
                 </button>
@@ -2510,9 +2728,8 @@ export default function Home() {
                       className="w-full px-4 py-2.5 text-left hover:bg-blue-700 flex items-center gap-3 text-sm"
                     >
                       <div
-                        className={`w-4 h-4 rounded-full border-2 border-white flex items-center justify-center ${
-                          isRecording ? "bg-red-500 border-red-500" : ""
-                        }`}
+                        className={`w-4 h-4 rounded-full border-2 border-white flex items-center justify-center ${isRecording ? "bg-red-500 border-red-500" : ""
+                          }`}
                       >
                         {isRecording && (
                           <div className="w-1.5 h-1.5 bg-white rounded-full" />
@@ -2656,9 +2873,21 @@ export default function Home() {
                   <input
                     type="text"
                     placeholder="Type Something..."
-                    className="w-full pl-4 pr-20 py-2.5 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    className="w-full pl-4 pr-20 py-2.5 border border-gray-200 rounded-full text-sm text-gray-900 placeholder-gray-400 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <button className="absolute right-1 top-1/2 -translate-y-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-full text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-1.5">
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={!chatInput.trim()}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-full text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     <SendIcon className="w-4 h-4" />
                   </button>
                 </div>
@@ -2704,6 +2933,73 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Start Recording Confirmation Dialog */}
+      {showStartRecordingDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-blue-600 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center shrink-0">
+                <RecordIcon className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  Start Recording
+                </h3>
+                <p className="text-sm text-blue-100">
+                  This will record the meeting for all participants. Everyone
+                  will be notified that the meeting is being recorded.
+                </p>
+              </div>
+            </div>
+
+            {/* Recording info */}
+            <div className="bg-blue-700/50 rounded-xl p-4 mb-6">
+              <div className="flex items-center gap-3 text-sm text-blue-100">
+                <svg
+                  className="w-5 h-5 shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+                <span>
+                  Recording will be saved and available for download after the
+                  meeting ends.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row gap-3">
+              <button
+                onClick={handleCancelStartRecording}
+                className="flex-1 bg-white/20 hover:bg-white/30 text-white font-medium py-2.5 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStartRecording}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+                Start Recording
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={hideToast}
+      />
 
       {/* Participant Menu */}
       {menuOpen && (
@@ -2770,18 +3066,18 @@ export default function Home() {
       )}
 
       {/* Screen Share Dialog */}
-      {showScreenShareDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-blue-600 rounded-2xl p-6 max-w-2xl w-full shadow-2xl">
-            <h3 className="text-xl font-semibold text-white mb-2">
-              Share screen
-            </h3>
-            <p className="text-sm text-blue-100 mb-6">
-              This meeting wants to share the contents of your screen.
-            </p>
+      {/* {showScreenShareDialog && ( */}
+      {/* // <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        //   <div className="bg-blue-600 rounded-2xl p-6 max-w-2xl w-full shadow-2xl">
+        //     <h3 className="text-xl font-semibold text-white mb-2">
+        //       Share screen
+        //     </h3>
+        //     <p className="text-sm text-blue-100 mb-6">
+        //       This meeting wants to share the contents of your screen.
+        //     </p> */}
 
-            {/* Tabs */}
-            <div className="flex gap-1 mb-4 border-b border-blue-500">
+      {/* Tabs */}
+      {/* <div className="flex gap-1 mb-4 border-b border-blue-500">
               {["Entire screen", "Window", "Chrome Tab"].map((tab) => (
                 <button
                   key={tab}
@@ -2795,10 +3091,10 @@ export default function Home() {
                   {tab}
                 </button>
               ))}
-            </div>
+            </div> */}
 
-            {/* Screen selection grid */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
+      {/* Screen selection grid */}
+      {/* <div className="grid grid-cols-2 gap-4 mb-6">
               {[1, 2].map((screenNum) => (
                 <button
                   key={screenNum}
@@ -2819,10 +3115,10 @@ export default function Home() {
                   </div>
                 </button>
               ))}
-            </div>
+            </div> */}
 
-            {/* Action buttons */}
-            <div className="flex gap-3 justify-end">
+      {/* Action buttons */}
+      {/* <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowScreenShareDialog(false)}
                 className="bg-white/20 hover:bg-white/30 text-white font-medium py-2.5 px-6 rounded-lg transition-colors"
@@ -2840,10 +3136,10 @@ export default function Home() {
               >
                 Share
               </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </div> */}
+      {/* </div>
+        </div> */}
+      {/* )} */}
 
       {/* End Session Dialog */}
       {showEndSessionDialog && (
@@ -2909,11 +3205,10 @@ export default function Home() {
               <button
                 onClick={handleCastExternalVideo}
                 disabled={!externalVideoUrl.trim()}
-                className={`font-medium py-2.5 px-6 rounded-lg transition-colors ${
-                  externalVideoUrl.trim()
-                    ? "bg-red-500 hover:bg-red-600 text-white"
-                    : "bg-white/50 text-blue-300 cursor-not-allowed"
-                }`}
+                className={`font-medium py-2.5 px-6 rounded-lg transition-colors ${externalVideoUrl.trim()
+                  ? "bg-red-500 hover:bg-red-600 text-white"
+                  : "bg-white/50 text-blue-300 cursor-not-allowed"
+                  }`}
               >
                 Cast
               </button>
@@ -3011,9 +3306,8 @@ export default function Home() {
                           onClick={() =>
                             handleSetCurrentPresentation(file.name)
                           }
-                          className={`w-5 h-5 rounded-full border-2 border-white flex items-center justify-center ${
-                            file.isCurrent ? "bg-white" : "bg-transparent"
-                          }`}
+                          className={`w-5 h-5 rounded-full border-2 border-white flex items-center justify-center ${file.isCurrent ? "bg-white" : "bg-transparent"
+                            }`}
                         >
                           {file.isCurrent && (
                             <svg
@@ -3090,11 +3384,10 @@ export default function Home() {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-12 flex flex-col items-center justify-center transition-colors ${
-                isDragging
-                  ? "border-white bg-blue-700/30"
-                  : "border-blue-400 bg-transparent"
-              }`}
+              className={`border-2 border-dashed rounded-lg p-12 flex flex-col items-center justify-center transition-colors ${isDragging
+                ? "border-white bg-blue-700/30"
+                : "border-blue-400 bg-transparent"
+                }`}
             >
               <svg
                 className="w-16 h-16 text-white mb-4"
@@ -3268,11 +3561,10 @@ export default function Home() {
                 disabled={
                   !pollQuestion.trim() || !pollAnswers.some((a) => a.trim())
                 }
-                className={`font-medium py-2.5 px-6 rounded-lg transition-colors ${
-                  pollQuestion.trim() && pollAnswers.some((a) => a.trim())
-                    ? "bg-white hover:bg-gray-100 text-blue-600"
-                    : "bg-white/50 text-blue-300 cursor-not-allowed"
-                }`}
+                className={`font-medium py-2.5 px-6 rounded-lg transition-colors ${pollQuestion.trim() && pollAnswers.some((a) => a.trim())
+                  ? "bg-white hover:bg-gray-100 text-blue-600"
+                  : "bg-white/50 text-blue-300 cursor-not-allowed"
+                  }`}
               >
                 Publish Polls
               </button>
@@ -3364,9 +3656,8 @@ export default function Home() {
           <div className="relative bg-blue-600 w-[90%] max-w-sm sm:max-w-3xl h-[70vh] sm:h-auto sm:max-h-[90vh] shadow-2xl flex flex-col sm:flex-row rounded-2xl overflow-hidden pointer-events-auto transition-all">
             {/* Left sidebar - Menu */}
             <div
-              className={`w-full sm:w-80 bg-blue-600 sm:bg-blue-700/30 p-6 ${
-                activeMobileView === "menu" ? "block" : "hidden sm:block"
-              }`}
+              className={`w-full sm:w-80 bg-blue-600 sm:bg-blue-700/30 p-6 ${activeMobileView === "menu" ? "block" : "hidden sm:block"
+                }`}
             >
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
@@ -3410,11 +3701,10 @@ export default function Home() {
                     setSettingsTab("Device Settings");
                     setActiveMobileView("content");
                   }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                    settingsTab === "Device Settings"
-                      ? "bg-blue-500/50 sm:bg-blue-700 text-white"
-                      : "text-blue-100 hover:bg-blue-700/50"
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${settingsTab === "Device Settings"
+                    ? "bg-blue-500/50 sm:bg-blue-700 text-white"
+                    : "text-blue-100 hover:bg-blue-700/50"
+                    }`}
                 >
                   <SettingsIcon className="w-5 h-5" />
                   <span className="font-medium">Device Settings</span>
@@ -3425,11 +3715,10 @@ export default function Home() {
                     setSettingsTab("Notifications");
                     setActiveMobileView("content");
                   }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                    settingsTab === "Notifications"
-                      ? "bg-blue-500/50 sm:bg-blue-700 text-white"
-                      : "text-blue-100 hover:bg-blue-700/50"
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${settingsTab === "Notifications"
+                    ? "bg-blue-500/50 sm:bg-blue-700 text-white"
+                    : "text-blue-100 hover:bg-blue-700/50"
+                    }`}
                 >
                   <svg
                     className="w-5 h-5"
@@ -3449,11 +3738,10 @@ export default function Home() {
                     setSettingsTab("Waiting Room");
                     setActiveMobileView("content");
                   }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                    settingsTab === "Waiting Room"
-                      ? "bg-blue-500/50 sm:bg-blue-700 text-white"
-                      : "text-blue-100 hover:bg-blue-700/50"
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${settingsTab === "Waiting Room"
+                    ? "bg-blue-500/50 sm:bg-blue-700 text-white"
+                    : "text-blue-100 hover:bg-blue-700/50"
+                    }`}
                 >
                   <UsersIcon className="w-5 h-5" />
                   <span className="font-medium">Waiting Room</span>
@@ -3464,9 +3752,8 @@ export default function Home() {
 
             {/* Right content */}
             <div
-              className={`flex-1 bg-blue-600 p-6 relative overflow-y-auto ${
-                activeMobileView === "content" ? "block" : "hidden sm:block"
-              }`}
+              className={`flex-1 bg-blue-600 p-6 relative overflow-y-auto ${activeMobileView === "content" ? "block" : "hidden sm:block"
+                }`}
             >
               {/* Mobile Header for Content View */}
               <div className="flex items-center justify-between mb-6 sm:hidden">
@@ -3685,16 +3972,14 @@ export default function Home() {
                       </div>
                       <button
                         onClick={() => setNotificationLeave(!notificationLeave)}
-                        className={`relative w-12 h-6 rounded-full transition-colors ${
-                          notificationLeave ? "bg-white" : "bg-blue-700/50"
-                        }`}
+                        className={`relative w-12 h-6 rounded-full transition-colors ${notificationLeave ? "bg-white" : "bg-blue-700/50"
+                          }`}
                       >
                         <div
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${
-                            notificationLeave
-                              ? "translate-x-6 bg-blue-600"
-                              : "translate-x-0 bg-white"
-                          }`}
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${notificationLeave
+                            ? "translate-x-6 bg-blue-600"
+                            : "translate-x-0 bg-white"
+                            }`}
                         />
                       </button>
                     </div>
@@ -3719,16 +4004,14 @@ export default function Home() {
                         onClick={() =>
                           setNotificationNewMessage(!notificationNewMessage)
                         }
-                        className={`relative w-12 h-6 rounded-full transition-colors ${
-                          notificationNewMessage ? "bg-white" : "bg-blue-700/50"
-                        }`}
+                        className={`relative w-12 h-6 rounded-full transition-colors ${notificationNewMessage ? "bg-white" : "bg-blue-700/50"
+                          }`}
                       >
                         <div
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${
-                            notificationNewMessage
-                              ? "translate-x-6 bg-blue-600"
-                              : "translate-x-0 bg-white"
-                          }`}
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${notificationNewMessage
+                            ? "translate-x-6 bg-blue-600"
+                            : "translate-x-0 bg-white"
+                            }`}
                         />
                       </button>
                     </div>
@@ -3745,16 +4028,14 @@ export default function Home() {
                         onClick={() =>
                           setNotificationHandRaise(!notificationHandRaise)
                         }
-                        className={`relative w-12 h-6 rounded-full transition-colors ${
-                          notificationHandRaise ? "bg-white" : "bg-blue-700/50"
-                        }`}
+                        className={`relative w-12 h-6 rounded-full transition-colors ${notificationHandRaise ? "bg-white" : "bg-blue-700/50"
+                          }`}
                       >
                         <div
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${
-                            notificationHandRaise
-                              ? "translate-x-6 bg-blue-600"
-                              : "translate-x-0 bg-white"
-                          }`}
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${notificationHandRaise
+                            ? "translate-x-6 bg-blue-600"
+                            : "translate-x-0 bg-white"
+                            }`}
                         />
                       </button>
                     </div>
@@ -3777,16 +4058,14 @@ export default function Home() {
                       </div>
                       <button
                         onClick={() => setNotificationError(!notificationError)}
-                        className={`relative w-12 h-6 rounded-full transition-colors ${
-                          notificationError ? "bg-white" : "bg-blue-700/50"
-                        }`}
+                        className={`relative w-12 h-6 rounded-full transition-colors ${notificationError ? "bg-white" : "bg-blue-700/50"
+                          }`}
                       >
                         <div
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${
-                            notificationError
-                              ? "translate-x-6 bg-blue-600"
-                              : "translate-x-0 bg-white"
-                          }`}
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${notificationError
+                            ? "translate-x-6 bg-blue-600"
+                            : "translate-x-0 bg-white"
+                            }`}
                         />
                       </button>
                     </div>
@@ -3800,61 +4079,107 @@ export default function Home() {
                     Waiting Room
                   </h3>
 
-                  <div className="flex gap-3 mb-6">
-                    <button className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors">
-                      <svg
-                        className="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      Allow Everyone
-                    </button>
-                    <button className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors">
-                      <svg
-                        className="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                      >
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                      Deny Everyone
-                    </button>
-                  </div>
-
-                  <div className="space-y-4">
-                    {waitingUsers.map((user) => (
-                      <div
-                        key={user.id}
-                        className="flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={user.imageSrc}
-                            alt={user.name}
-                            className="w-10 h-10 rounded-full object-cover border-2 border-white/20"
-                          />
-                          <span className="text-white font-medium">
-                            {user.name}
-                          </span>
-                        </div>
-                        <div className="flex gap-2">
-                          <button className="px-4 py-1.5 rounded-full border border-blue-300 text-white hover:bg-blue-700 transition-colors text-sm font-medium">
-                            Allow
-                          </button>
-                          <button className="px-4 py-1.5 rounded-full border border-red-500 text-red-500 hover:bg-red-500/10 transition-colors text-sm font-medium">
-                            Deny
-                          </button>
-                        </div>
+                  {waitingUsers.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-blue-200 text-sm">No users waiting</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-3 mb-6">
+                        <button
+                          onClick={() => {
+                            const guests = waitingUsers.map((u) => ({
+                              odId: u.id,
+                              odUserId: u.odUserId,
+                              status: "ALLOW",
+                            }));
+                            sendDDPMethod("allowPendingUsers", [guests]);
+                            showToast(`Allowed ${waitingUsers.length} user(s)`, "success");
+                          }}
+                          className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          Allow Everyone
+                        </button>
+                        <button
+                          onClick={() => {
+                            const guests = waitingUsers.map((u) => ({
+                              odId: u.id,
+                              odUserId: u.odUserId,
+                              status: "DENY",
+                            }));
+                            sendDDPMethod("allowPendingUsers", [guests]);
+                            showToast(`Denied ${waitingUsers.length} user(s)`, "info");
+                          }}
+                          className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                          >
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                          Deny Everyone
+                        </button>
                       </div>
-                    ))}
-                  </div>
+
+                      <div className="space-y-4">
+                        {waitingUsers.map((user) => (
+                          <div
+                            key={user.id}
+                            className="flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={user.imageSrc}
+                                alt={user.name}
+                                className="w-10 h-10 rounded-full object-cover border-2 border-white/20"
+                              />
+                              <span className="text-white font-medium">
+                                {user.name}
+                              </span>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  sendDDPMethod("allowPendingUsers", [
+                                    [{ odId: user.id, odUserId: user.odUserId, status: "ALLOW" }],
+                                  ]);
+                                  showToast(`Allowed ${user.name}`, "success");
+                                }}
+                                className="px-4 py-1.5 rounded-full border border-blue-300 text-white hover:bg-blue-700 transition-colors text-sm font-medium"
+                              >
+                                Allow
+                              </button>
+                              <button
+                                onClick={() => {
+                                  sendDDPMethod("allowPendingUsers", [
+                                    [{ odId: user.id, odUserId: user.odUserId, status: "DENY" }],
+                                  ]);
+                                  showToast(`Denied ${user.name}`, "info");
+                                }}
+                                className="px-4 py-1.5 rounded-full border border-red-500 text-red-500 hover:bg-red-500/10 transition-colors text-sm font-medium"
+                              >
+                                Deny
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

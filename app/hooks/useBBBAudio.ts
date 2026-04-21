@@ -1,0 +1,139 @@
+import { useEffect, useRef, useState } from "react";
+
+export function useBBBAudio(sessionToken: string | undefined, stream: MediaStream | null) {
+  const wsRef = useRef<WebSocket | null>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const [status, setStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
+
+  useEffect(() => {
+    if (!sessionToken || !stream) {
+      // cleanup
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setStatus("disconnected");
+      return;
+    }
+
+    let pc: RTCPeerConnection | null = null;
+    let ws: WebSocket | null = null;
+    let isComponentMounted = true;
+
+    const connectAudio = async () => {
+      setStatus("connecting");
+
+      // 1. Initialize WebSocket
+      const wsUrl = `wss://meet.konn3ct.ng/bbb-webrtc-sfu?sessionToken=${sessionToken}`;
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      // 2. Initialize RTCPeerConnection
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+      peerConnectionRef.current = pc;
+
+      // Add stream tracks to PC
+      stream.getTracks().forEach((track) => {
+        if (pc) pc.addTrack(track, stream);
+      });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              id: "onIceCandidate",
+              type: "audio",
+              role: "sendrecv",
+              clientSessionNumber: 2,
+              candidate: {
+                candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex,
+                usernameFragment: event.candidate.usernameFragment,
+              },
+            })
+          );
+        }
+      };
+
+      ws.onopen = async () => {
+        console.log("[BBB Audio WS] Connected");
+        try {
+          if (!pc) return;
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          const sdpOfferMessage = {
+            id: "start",
+            type: "audio",
+            role: "sendrecv",
+            clientSessionNumber: 2,
+            sdpOffer: offer.sdp,
+            extension: null,
+            transparentListenOnly: false,
+          };
+
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(sdpOfferMessage));
+          }
+        } catch (err) {
+          console.error("[BBB Audio WS] Error creating offer:", err);
+        }
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          if (msg.id === "startResponse") {
+            if (msg.response === "accepted" && msg.sdpAnswer && pc) {
+              console.log("[BBB Audio WS] Received startResponse with sdpAnswer");
+              await pc.setRemoteDescription(
+                new RTCSessionDescription({
+                  type: "answer",
+                  sdp: msg.sdpAnswer,
+                })
+              );
+            } else {
+              console.error("[BBB Audio WS] startResponse not accepted:", msg);
+            }
+          } else if (msg.id === "webRTCAudioSuccess") {
+            console.log("[BBB Audio WS] Received webRTCAudioSuccess:", msg.success);
+            if (msg.success === "MEDIA_FLOWING" && isComponentMounted) {
+              setStatus("connected");
+            }
+          }
+        } catch (err) {
+          console.error("[BBB Audio WS] Error parsing message:", err);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error("[BBB Audio WS] Error:", err);
+      };
+
+      ws.onclose = () => {
+        console.log("[BBB Audio WS] Closed");
+        if (isComponentMounted) {
+          setStatus("disconnected");
+        }
+      };
+    };
+
+    connectAudio();
+
+    return () => {
+      isComponentMounted = false;
+      if (pc) pc.close();
+      if (ws) ws.close();
+    };
+  }, [sessionToken, stream]);
+
+  return { status };
+}
