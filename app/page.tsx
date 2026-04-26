@@ -468,6 +468,8 @@ export default function Home() {
   const { status: bbbAudioStatus, remoteStream } = useBBBAudio(
     bbbSession?.sessionToken,
     bbbSession?.voicebridge,
+    bbbSession?.internalUserID,
+    bbbSession?.fullname,
     stream
   );
 
@@ -496,7 +498,11 @@ export default function Home() {
 
     try {
       const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
       });
       setStream(micStream);
       setIsMicOn(true);
@@ -1807,6 +1813,7 @@ export default function Home() {
 
   return (
     <div className="h-[100dvh] flex flex-col bg-white overflow-hidden">
+      <audio ref={audioRef} autoPlay playsInline />
       {/* Header */}
       <header className="shrink-0 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between px-4 lg:px-6 py-3">
@@ -2445,9 +2452,8 @@ export default function Home() {
                       </div>
                     </div>
                   ) : (
-                      <audio ref={audioRef} autoPlay />
-                      <ParticipantCard
-                        name={activeParticipant.name}
+                    <ParticipantCard
+                      name={activeParticipant.name}
                         isActive={true}
                         isMuted={activeParticipant.isMuted}
                         isVideoOff={activeParticipant.isVideoOff}

@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
-export function useBBBAudio(sessionToken: string | undefined, voiceBridge: string | undefined, stream: MediaStream | null) {
+export function useBBBAudio(
+  sessionToken: string | undefined, 
+  voiceBridge: string | undefined, 
+  userId: string | undefined,
+  userName: string | undefined,
+  stream: MediaStream | null
+) {
   const wsRef = useRef<WebSocket | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const [status, setStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
@@ -8,7 +14,7 @@ export function useBBBAudio(sessionToken: string | undefined, voiceBridge: strin
   const iceBufferRef = useRef<any[]>([]);
 
   useEffect(() => {
-    if (!sessionToken || !stream || !voiceBridge) {
+    if (!sessionToken || !stream || !voiceBridge || !userId) {
       // cleanup
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
@@ -44,17 +50,20 @@ export function useBBBAudio(sessionToken: string | undefined, voiceBridge: strin
 
       // Handle incoming tracks (to hear others)
       pc.ontrack = (event) => {
-        console.log("[BBB Audio] Received remote track");
-        if (event.streams && event.streams[0]) {
-          setRemoteStream(event.streams[0]);
-        } else {
-          const newStream = new MediaStream([event.track]);
-          setRemoteStream(newStream);
+        console.log("[BBB Audio] Received remote track:", event.track.kind);
+        if (isComponentMounted) {
+          if (event.streams && event.streams[0]) {
+            setRemoteStream(event.streams[0]);
+          } else {
+            const newStream = new MediaStream([event.track]);
+            setRemoteStream(newStream);
+          }
         }
       };
 
       // Add local stream tracks to PC
       stream.getTracks().forEach((track) => {
+        console.log("[BBB Audio] Adding local track:", track.kind);
         if (pc) pc.addTrack(track, stream);
       });
 
@@ -83,7 +92,7 @@ export function useBBBAudio(sessionToken: string | undefined, voiceBridge: strin
       };
 
       ws.onopen = async () => {
-        console.log("[BBB Audio WS] Connected");
+        console.log("[BBB Audio WS] Connected, sending offer");
         try {
           if (!pc) return;
           const offer = await pc.createOffer();
@@ -98,15 +107,19 @@ export function useBBBAudio(sessionToken: string | undefined, voiceBridge: strin
             extension: voiceBridge,
             transparentListenOnly: false,
             voiceBridge: voiceBridge,
+            userId: userId,
+            userName: userName || userId,
           };
 
           if (ws?.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(sdpOfferMessage));
             
             // Flush buffered candidates
-            console.log(`[BBB Audio WS] Flushing ${iceBufferRef.current.length} buffered ICE candidates`);
-            iceBufferRef.current.forEach(msg => ws?.send(JSON.stringify(msg)));
-            iceBufferRef.current = [];
+            if (iceBufferRef.current.length > 0) {
+              console.log(`[BBB Audio WS] Flushing ${iceBufferRef.current.length} buffered ICE candidates`);
+              iceBufferRef.current.forEach(msg => ws?.send(JSON.stringify(msg)));
+              iceBufferRef.current = [];
+            }
           }
         } catch (err) {
           console.error("[BBB Audio WS] Error creating offer:", err);
@@ -116,10 +129,11 @@ export function useBBBAudio(sessionToken: string | undefined, voiceBridge: strin
       ws.onmessage = async (event) => {
         try {
           const msg = JSON.parse(event.data);
+          console.log("[BBB Audio WS] Message:", msg.id);
 
           if (msg.id === "startResponse") {
             if (msg.response === "accepted" && msg.sdpAnswer && pc) {
-              console.log("[BBB Audio WS] Received startResponse with sdpAnswer");
+              console.log("[BBB Audio WS] Received startResponse accepted");
               await pc.setRemoteDescription(
                 new RTCSessionDescription({
                   type: "answer",
@@ -130,7 +144,7 @@ export function useBBBAudio(sessionToken: string | undefined, voiceBridge: strin
               console.error("[BBB Audio WS] startResponse not accepted:", msg);
             }
           } else if (msg.id === "webRTCAudioSuccess") {
-            console.log("[BBB Audio WS] Received webRTCAudioSuccess:", msg.success);
+            console.log("[BBB Audio WS] Received success:", msg.success);
             if (msg.success === "MEDIA_FLOWING" && isComponentMounted) {
               setStatus("connected");
             }
@@ -147,11 +161,11 @@ export function useBBBAudio(sessionToken: string | undefined, voiceBridge: strin
       };
 
       ws.onerror = (err) => {
-        console.error("[BBB Audio WS] Error:", err);
+        console.error("[BBB Audio WS] WebSocket Error:", err);
       };
 
       ws.onclose = () => {
-        console.log("[BBB Audio WS] Closed");
+        console.log("[BBB Audio WS] WebSocket Closed");
         if (isComponentMounted) {
           setStatus("disconnected");
         }
@@ -165,7 +179,7 @@ export function useBBBAudio(sessionToken: string | undefined, voiceBridge: strin
       if (pc) pc.close();
       if (ws) ws.close();
     };
-  }, [sessionToken, voiceBridge, stream]);
+  }, [sessionToken, voiceBridge, userId, userName, stream]);
 
   return { status, remoteStream };
 }
