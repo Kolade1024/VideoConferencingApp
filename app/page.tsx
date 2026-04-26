@@ -426,7 +426,6 @@ export default function Home() {
     sendDDPMethod,
   } = useBBBSession();
 
-  const [isMicOn, setIsMicOn] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(false);
   const isRecording = bbbIsRecording;
   const [recordingTime, setRecordingTime] = useState(0);
@@ -460,18 +459,27 @@ export default function Home() {
     }
   }, []);
 
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const audioLevel = useAudioLevel(stream);
 
-  // Initialize BBB Audio WebRTC connection
-  const { status: bbbAudioStatus, remoteStream } = useBBBAudio(
+  // Initialize BBB Audio WebRTC connection (manages its own mic stream)
+  const {
+    status: bbbAudioStatus,
+    remoteStream,
+    localStream,
+    isMuted: bbbIsMuted,
+    toggleMute: bbbToggleMute,
+  } = useBBBAudio(
     bbbSession?.sessionToken,
     bbbSession?.voicebridge,
     bbbSession?.internalUserID,
-    bbbSession?.fullname,
-    stream
+    bbbSession?.fullname
   );
+
+  // Derive isMicOn from the audio hook's mute state
+  const isMicOn = !bbbIsMuted;
+
+  // Use the hook's local stream for the audio level meter
+  const audioLevel = useAudioLevel(localStream);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -484,33 +492,10 @@ export default function Home() {
     }
   }, [remoteStream]);
 
-  //Request Microphone
-  const requestMicrophone = async () => {
-    if (isMicOn) {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-        setStream(null);
-      }
-      setIsMicOn(false);
-      sendDDPMethod("toggleSelfVoice", []);
-      return;
-    }
-
-    try {
-      const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      setStream(micStream);
-      setIsMicOn(true);
-      sendDDPMethod("toggleSelfVoice", []);
-      console.log("Microphone stream:", micStream);
-    } catch (err: any) {
-      setError(err.message || "Microphone access denied");
-    }
+  // Toggle microphone — just enables/disables the track, no reconnect
+  const requestMicrophone = () => {
+    bbbToggleMute();
+    sendDDPMethod("toggleSelfVoice", []);
   };
 
   //Request Camera
@@ -1687,13 +1672,14 @@ export default function Home() {
       odId: "self",
       name: "You",
       isYou: true,
-      isMuted: !isMicOn,
+      isMuted: bbbIsMuted,
       isVideoOff: !isVideoOn,
       hasRaisedHand: raisedHands.includes(1),
       imageSrc: "https://ui-avatars.com/api/?name=You&background=2563eb&color=fff&size=400",
       role: "MODERATOR",
       presenter: false,
       away: false,
+      talking: false,
     });
   }
 
@@ -2454,16 +2440,16 @@ export default function Home() {
                   ) : (
                     <ParticipantCard
                       name={activeParticipant.name}
-                        isActive={true}
-                        isMuted={activeParticipant.isMuted}
-                        isVideoOff={activeParticipant.isVideoOff}
-                        imageSrc={activeParticipant.imageSrc}
-                        hasRaisedHand={activeParticipant.hasRaisedHand}
-                        audioLevel={
-                          activeParticipant.isYou ? audioLevel : undefined
-                        }
-                        talking={activeParticipant.talking}
-                      />
+                      isActive={true}
+                      isMuted={activeParticipant.isMuted}
+                      isVideoOff={activeParticipant.isVideoOff}
+                      imageSrc={activeParticipant.imageSrc}
+                      hasRaisedHand={activeParticipant.hasRaisedHand}
+                      audioLevel={
+                        activeParticipant.isYou ? audioLevel : undefined
+                      }
+                      talking={activeParticipant.talking}
+                    />
                   )}
                 </div>
 

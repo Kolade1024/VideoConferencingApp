@@ -482,25 +482,10 @@ export function useBBBSession() {
             }
 
             if (collection === "voiceUsers" && fields) {
-                // The 'id' in voiceUsers is often different from the 'users' collection id.
-                // We must find the user by their intId/userId.
-                // But in 'changed' messages, we might not have the intId if it didn't change.
-                // However, DDP 'changed' for voiceUsers usually includes the fields that changed.
-                // We might need to keep a map of voiceUserId -> intId.
-                
-                // For now, let's assume we can find the participant who has this as their voice state.
-                // Actually, a better way is to store voice state in a separate ref and merge on update.
-                
-                // Simplified: search for the participant whose odUserId matches the voiceUser's intId.
-                // Note: This is slightly inefficient but works for small meetings.
-                const participantEntry = Array.from(participantsRef.current.entries()).find(
-                    ([_, p]) => p.voiceUserId === id || p.odUserId === id.split('-')[0] // Some heuristic
-                );
-                
-                // Better: BBB voiceUsers collection 'id' is often just the internal userId.
-                const intId = id; 
+                // BBB voiceUsers 'changed' — find the participant by matching IDs
+                // Try the document id directly, or split on '-' as a fallback
                 const pEntry = Array.from(participantsRef.current.entries()).find(
-                    ([_, p]) => p.odUserId === intId
+                    ([_, p]) => p.odUserId === id || p.odUserId === id.split('-')[0]
                 );
 
                 if (pEntry) {
