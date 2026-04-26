@@ -92,6 +92,8 @@ export interface BBBUser {
     guest: boolean;
     mobile: boolean;
     extId: string;
+    muted?: boolean;
+    talking?: boolean;
 }
 
 // ─── BBB Chat Message from DDP ──────────────────────────────────────

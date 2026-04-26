@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
-export function useBBBAudio(sessionToken: string | undefined, stream: MediaStream | null) {
+export function useBBBAudio(sessionToken: string | undefined, voiceBridge: string | undefined, stream: MediaStream | null) {
   const wsRef = useRef<WebSocket | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const [status, setStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const iceBufferRef = useRef<any[]>([]);
 
   useEffect(() => {
-    if (!sessionToken || !stream) {
+    if (!sessionToken || !stream || !voiceBridge) {
       // cleanup
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
@@ -17,6 +19,7 @@ export function useBBBAudio(sessionToken: string | undefined, stream: MediaStrea
         wsRef.current = null;
       }
       setStatus("disconnected");
+      setRemoteStream(null);
       return;
     }
 
@@ -26,6 +29,7 @@ export function useBBBAudio(sessionToken: string | undefined, stream: MediaStrea
 
     const connectAudio = async () => {
       setStatus("connecting");
+      iceBufferRef.current = [];
 
       // 1. Initialize WebSocket
       const wsUrl = `wss://meet.konn3ct.ng/bbb-webrtc-sfu?sessionToken=${sessionToken}`;
@@ -38,27 +42,43 @@ export function useBBBAudio(sessionToken: string | undefined, stream: MediaStrea
       });
       peerConnectionRef.current = pc;
 
-      // Add stream tracks to PC
+      // Handle incoming tracks (to hear others)
+      pc.ontrack = (event) => {
+        console.log("[BBB Audio] Received remote track");
+        if (event.streams && event.streams[0]) {
+          setRemoteStream(event.streams[0]);
+        } else {
+          const newStream = new MediaStream([event.track]);
+          setRemoteStream(newStream);
+        }
+      };
+
+      // Add local stream tracks to PC
       stream.getTracks().forEach((track) => {
         if (pc) pc.addTrack(track, stream);
       });
 
       pc.onicecandidate = (event) => {
-        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(
-            JSON.stringify({
-              id: "onIceCandidate",
-              type: "audio",
-              role: "sendrecv",
-              clientSessionNumber: 2,
-              candidate: {
-                candidate: event.candidate.candidate,
-                sdpMid: event.candidate.sdpMid,
-                sdpMLineIndex: event.candidate.sdpMLineIndex,
-                usernameFragment: event.candidate.usernameFragment,
-              },
-            })
-          );
+        if (event.candidate) {
+          const candidateMsg = {
+            id: "onIceCandidate",
+            type: "audio",
+            role: "sendrecv",
+            clientSessionNumber: 2,
+            candidate: {
+              candidate: event.candidate.candidate,
+              sdpMid: event.candidate.sdpMid,
+              sdpMLineIndex: event.candidate.sdpMLineIndex,
+              usernameFragment: event.candidate.usernameFragment,
+            },
+            voiceBridge: voiceBridge,
+          };
+
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(candidateMsg));
+          } else {
+            iceBufferRef.current.push(candidateMsg);
+          }
         }
       };
 
@@ -75,12 +95,18 @@ export function useBBBAudio(sessionToken: string | undefined, stream: MediaStrea
             role: "sendrecv",
             clientSessionNumber: 2,
             sdpOffer: offer.sdp,
-            extension: null,
+            extension: voiceBridge,
             transparentListenOnly: false,
+            voiceBridge: voiceBridge,
           };
 
           if (ws?.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(sdpOfferMessage));
+            
+            // Flush buffered candidates
+            console.log(`[BBB Audio WS] Flushing ${iceBufferRef.current.length} buffered ICE candidates`);
+            iceBufferRef.current.forEach(msg => ws?.send(JSON.stringify(msg)));
+            iceBufferRef.current = [];
           }
         } catch (err) {
           console.error("[BBB Audio WS] Error creating offer:", err);
@@ -108,6 +134,12 @@ export function useBBBAudio(sessionToken: string | undefined, stream: MediaStrea
             if (msg.success === "MEDIA_FLOWING" && isComponentMounted) {
               setStatus("connected");
             }
+          } else if (msg.id === "iceCandidate") {
+            if (pc && msg.candidate) {
+              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            }
+          } else if (msg.id === "error") {
+             console.error("[BBB Audio WS] SFU Error:", msg.message || msg);
           }
         } catch (err) {
           console.error("[BBB Audio WS] Error parsing message:", err);
@@ -133,7 +165,8 @@ export function useBBBAudio(sessionToken: string | undefined, stream: MediaStrea
       if (pc) pc.close();
       if (ws) ws.close();
     };
-  }, [sessionToken, stream]);
+  }, [sessionToken, voiceBridge, stream]);
 
-  return { status };
+  return { status, remoteStream };
 }
+

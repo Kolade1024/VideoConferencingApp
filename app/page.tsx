@@ -465,7 +465,22 @@ export default function Home() {
   const audioLevel = useAudioLevel(stream);
 
   // Initialize BBB Audio WebRTC connection
-  const { status: bbbAudioStatus } = useBBBAudio(bbbSession?.sessionToken, stream);
+  const { status: bbbAudioStatus, remoteStream } = useBBBAudio(
+    bbbSession?.sessionToken,
+    bbbSession?.voicebridge,
+    stream
+  );
+
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (audioRef.current && remoteStream) {
+      audioRef.current.srcObject = remoteStream;
+      audioRef.current.play().catch((err) => {
+        console.error("Error playing remote audio:", err);
+      });
+    }
+  }, [remoteStream]);
 
   //Request Microphone
   const requestMicrophone = async () => {
@@ -475,6 +490,7 @@ export default function Home() {
         setStream(null);
       }
       setIsMicOn(false);
+      sendDDPMethod("toggleSelfVoice", []);
       return;
     }
 
@@ -483,7 +499,8 @@ export default function Home() {
         audio: true,
       });
       setStream(micStream);
-      setIsMicOn(!isMicOn);
+      setIsMicOn(true);
+      sendDDPMethod("toggleSelfVoice", []);
       console.log("Microphone stream:", micStream);
     } catch (err: any) {
       setError(err.message || "Microphone access denied");
@@ -1646,13 +1663,14 @@ export default function Home() {
       odId: p.odId,
       name: isYou ? "You" : p.name,
       isYou,
-      isMuted: isYou ? !isMicOn : true,
+      isMuted: isYou ? !isMicOn : (p.muted ?? true),
       isVideoOff: isYou ? !isVideoOn : true,
       hasRaisedHand: p.raiseHand || raisedHands.includes(index + 1),
       imageSrc: p.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=${p.color.replace('#', '')}&color=fff&size=400`,
       role: p.role,
       presenter: p.presenter,
       away: p.away,
+      talking: p.talking || false,
     };
   });
 
@@ -2427,17 +2445,19 @@ export default function Home() {
                       </div>
                     </div>
                   ) : (
-                    <ParticipantCard
-                      name={activeParticipant.name}
-                      isActive={true}
-                      isMuted={activeParticipant.isMuted}
-                      isVideoOff={activeParticipant.isVideoOff}
-                      imageSrc={activeParticipant.imageSrc}
-                      hasRaisedHand={activeParticipant.hasRaisedHand}
-                      audioLevel={
-                        activeParticipant.isYou ? audioLevel : undefined
-                      }
-                    />
+                      <audio ref={audioRef} autoPlay />
+                      <ParticipantCard
+                        name={activeParticipant.name}
+                        isActive={true}
+                        isMuted={activeParticipant.isMuted}
+                        isVideoOff={activeParticipant.isVideoOff}
+                        imageSrc={activeParticipant.imageSrc}
+                        hasRaisedHand={activeParticipant.hasRaisedHand}
+                        audioLevel={
+                          activeParticipant.isYou ? audioLevel : undefined
+                        }
+                        talking={activeParticipant.talking}
+                      />
                   )}
                 </div>
 
@@ -2479,6 +2499,7 @@ export default function Home() {
                         isVideoOff={p.isVideoOff}
                         imageSrc={p.imageSrc}
                         hasRaisedHand={p.hasRaisedHand}
+                        talking={p.talking}
                       />
                     ))}
                 </div>

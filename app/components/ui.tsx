@@ -115,6 +115,7 @@ export function ParticipantCard({
   imageSrc,
   hasRaisedHand,
   audioLevel,
+  talking,
 }: {
   name: string;
   isActive?: boolean;
@@ -123,9 +124,12 @@ export function ParticipantCard({
   imageSrc?: string;
   hasRaisedHand?: boolean;
   audioLevel?: number;
+  talking?: boolean;
 }) {
+  const isSpeaking = talking || (audioLevel && audioLevel > 0.01);
+
   return (
-    <div className="relative aspect-video bg-gray-200 rounded-2xl overflow-hidden group">
+    <div className={`relative aspect-video bg-gray-200 rounded-2xl overflow-hidden group transition-all duration-300 ${isSpeaking ? 'ring-4 ring-blue-500 shadow-lg scale-[1.02] z-10' : ''}`}>
       {!isVideoOff && imageSrc ? (
         <img src={imageSrc} alt={name} className="w-full h-full object-cover" />
       ) : (
@@ -151,9 +155,9 @@ export function ParticipantCard({
             <MicOffIcon className="w-4 h-4" />
           </div>
         ) : (
-          isActive && (
+          (isActive || talking) && (
             <div className="bg-white/90 text-gray-700 p-1.5 rounded-full">
-              <SoundWaveIcon className="w-4 h-4" audioLevel={audioLevel} />
+              <SoundWaveIcon className="w-4 h-4" audioLevel={audioLevel || (talking ? 0.5 : 0)} />
             </div>
           )
         )}

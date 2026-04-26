@@ -382,10 +382,33 @@ export function useBBBSession() {
                     guest: fields.guest || false,
                     mobile: fields.mobile || false,
                     extId: fields.extId || "",
+                    muted: true, // Default to muted
+                    talking: false,
                 };
                 participantsRef.current.set(id, user);
                 updateParticipants();
                 console.log("[BBB] User added:", user.name);
+            }
+
+            if (collection === "voiceUsers" && fields) {
+                // Link voiceUser to participant
+                const intId = fields.intId || fields.userId || id;
+                // Find participant by odUserId (which is often the intId)
+                const participantEntry = Array.from(participantsRef.current.entries()).find(
+                    ([_, p]) => p.odUserId === intId
+                );
+
+                if (participantEntry) {
+                    const [pId, p] = participantEntry;
+                    const updated = {
+                        ...p,
+                        muted: fields.muted ?? p.muted,
+                        talking: fields.talking ?? p.talking,
+                    };
+                    participantsRef.current.set(pId, updated);
+                    updateParticipants();
+                    console.log("[BBB] Voice user joined/updated:", p.name, "Muted:", updated.muted);
+                }
             }
 
             if (collection === "group-chat-msg" && fields) {
@@ -458,6 +481,41 @@ export function useBBBSession() {
                 }
             }
 
+            if (collection === "voiceUsers" && fields) {
+                // The 'id' in voiceUsers is often different from the 'users' collection id.
+                // We must find the user by their intId/userId.
+                // But in 'changed' messages, we might not have the intId if it didn't change.
+                // However, DDP 'changed' for voiceUsers usually includes the fields that changed.
+                // We might need to keep a map of voiceUserId -> intId.
+                
+                // For now, let's assume we can find the participant who has this as their voice state.
+                // Actually, a better way is to store voice state in a separate ref and merge on update.
+                
+                // Simplified: search for the participant whose odUserId matches the voiceUser's intId.
+                // Note: This is slightly inefficient but works for small meetings.
+                const participantEntry = Array.from(participantsRef.current.entries()).find(
+                    ([_, p]) => p.voiceUserId === id || p.odUserId === id.split('-')[0] // Some heuristic
+                );
+                
+                // Better: BBB voiceUsers collection 'id' is often just the internal userId.
+                const intId = id; 
+                const pEntry = Array.from(participantsRef.current.entries()).find(
+                    ([_, p]) => p.odUserId === intId
+                );
+
+                if (pEntry) {
+                    const [pId, p] = pEntry;
+                    const updated = {
+                        ...p,
+                        muted: fields.muted !== undefined ? fields.muted : p.muted,
+                        talking: fields.talking !== undefined ? fields.talking : p.talking,
+                    };
+                    participantsRef.current.set(pId, updated);
+                    updateParticipants();
+                    console.log("[BBB] Voice user changed:", p.name, fields);
+                }
+            }
+
             if (collection === "group-chat-msg" && fields) {
                 const existing = chatMessagesRef.current.get(id);
                 if (existing) {
@@ -499,6 +557,18 @@ export function useBBBSession() {
                 }
             }
 
+            if (collection === "voiceUsers") {
+                // Find user and set muted/talking to false/true(default)
+                const pEntry = Array.from(participantsRef.current.entries()).find(
+                    ([_, p]) => p.odUserId === id
+                );
+                if (pEntry) {
+                    const [pId, p] = pEntry;
+                    participantsRef.current.set(pId, { ...p, muted: true, talking: false });
+                    updateParticipants();
+                }
+            }
+
             if (collection === "group-chat-msg") {
                 chatMessagesRef.current.delete(id);
                 updateChatMessages();
@@ -513,6 +583,7 @@ export function useBBBSession() {
                 }
             }
         };
+
 
         initSession();
 
